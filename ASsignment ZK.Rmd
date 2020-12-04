@@ -1,0 +1,405 @@
+---
+title: "Assignment ZK"
+author: "Rachel Fischer"
+date: "10/11/2020"
+output: html_document
+---
+
+#LOAD PACKAGES
+```{r}
+if (!require(gridExtra)) install.packages("gridExtra") #plots
+library(gridExtra)
+if (!require(ggpubr)) install.packages("ggpubr") #plots
+library(ggpubr)
+if (!require(car)) install.packages("car") #residual plots
+library(car)
+if (!require(lmtest)) install.packages("lmtest") #bptest
+library(lmtest)
+if (!require(sandwich)) install.packages("sandwich") #coeftest
+library(sandwich)
+if (!require(tibble)) install.packages("tibble") #bootstrapping
+library(tibble)
+if (!require(psych)) install.packages("psych") 
+library(psych)
+if (!require(tidyverse)) install.packages("tidyverse")
+library(tidyverse)
+if (!require(kableExtra)) install.packages("kableExtra")
+library(kableExtra)
+if (!require(sjPlot)) install.packages("sjPlot")
+library(sjPlot)
+if (!require(lme4)) install.packages("lme4") #mixed model
+library(lme4)
+if (!require(cAIC4)) install.packages("cAIC4") #mixed model
+library(cAIC4)
+if (!require(insight)) install.packages("insight") #mixed model
+library(insight)
+
+coef_table = function(model) {
+require(lm.beta)
+mod_sum = summary(model)
+mod_sum_p_values = as.character(round(mod_sum$coefficients[,
+4], 3))
+mod_sum_p_values[mod_sum_p_values != "0" & mod_sum_p_values !=
+"1"] = substr(mod_sum_p_values[mod_sum_p_values != "0" &
+mod_sum_p_values != "1"], 2, nchar(mod_sum_p_values[mod_sum_p_values !=
+"0" & mod_sum_p_values != "1"]))
+mod_sum_p_values[mod_sum_p_values == "0"] = "<.001"
+mod_sum_table = cbind(as.data.frame(round(cbind(coef(model),
+confint(model), c(0, lm.beta(model)$standardized.coefficients[c(2:length(model$coefficients))])),
+2)), mod_sum_p_values)
+names(mod_sum_table) = c("b", "95%CI lb", "95%CI ub", "Std.Beta",
+"p-value")
+mod_sum_table["(Intercept)", "Std.Beta"] = "0"
+return(mod_sum_table)
+}
+```
+
+
+#ASSIGNMENT 1
+##load data
+```{r}
+Ass_1_raw_data <- read.csv("https://tinyurl.com/ha-dataset1")
+Ass_1 <- Ass_1_raw_data
+```
+
+## data cleaning
+```{r}
+#checking errors
+Ass_1 %>% summary()
+hist(Ass_1$STAI_trait, main = "STAI_trait")
+
+hist(Ass_1$age, main = "age")
+
+hist(Ass_1$pain_cat, main = "pain cat")
+
+hist(Ass_1$mindfulness, main = "mindfulness")
+
+
+
+#correct errors recoding or exclusion
+Ass_1$STAI_trait[Ass_1$STAI_trait==3.9]<- 39 #typing error
+Ass_1$age[Ass_1$age==444]<- 44 #typing error
+Ass_1$household_income[Ass_1$household_income==-3732]<- 3732 #typing error
+Ass_1 <- subset(Ass_1, IQ != 49) # exclusion of participant with a really low IQ --> moderate mental retardation
+
+#centering metric variables
+# metric presictors are centered that it is easier to interpret the intercept and make the models easier to compare
+Ass_1$age_c <- scale(Ass_1$age, center=T, scale = F)
+Ass_1$STAI_trait_c <- scale(Ass_1$STAI_trait, center=T, scale = F)
+Ass_1$pain_cat_c <- scale(Ass_1$pain_cat, center=T, scale = F)
+Ass_1$serum_c <- scale(Ass_1$cortisol_serum, center=T, scale = F)
+Ass_1$saliva_c <- scale(Ass_1$cortisol_saliva, center=T, scale = F)
+Ass_1$mind_c <- scale(Ass_1$mindfulness, center=T, scale = F)
+Ass_1$IQ_c <- scale(Ass_1$IQ, center=T, scale = F)
+Ass_1$weight_c <- scale(Ass_1$weight, center=T, scale = F)
+Ass_1$income_c <- scale(Ass_1$household_income, center=T, scale = F)
+
+```
+
+
+##analysis
+###descriptives
+```{r}
+Ass_1 %>% 
+  summarize(number = n(), mean_age = mean(age), sd_age = sd(age), mean_STAI = mean(STAI_trait), sd_STAI = sd(STAI_trait), mean_pain = mean(pain), sd_pain = sd(pain), mean_pain_cat = mean(pain_cat), sd_pain_cat = sd(pain_cat), mean_cor_se = mean(cortisol_serum), sd_cor_se = sd(cortisol_serum), mean_cor_sa = mean(cortisol_saliva), sd_cor_sa = sd(cortisol_saliva), mean_mind = mean(mindfulness), sd_mind = sd(mindfulness))
+
+# by sex
+Ass_1 %>% 
+  group_by (sex) %>% 
+  summarize(number = n(), mean_age = mean(age), sd_age = sd(age), mean_STAI = mean(STAI_trait), sd_STAI = sd(STAI_trait), mean_pain = mean(pain), sd_pain = sd(pain), mean_pain_cat = mean(pain_cat), sd_pain_cat = sd(pain_cat), mean_cor_se = mean(cortisol_serum), sd_cor_se = sd(cortisol_serum), mean_cor_sa = mean(cortisol_saliva), sd_cor_sa = sd(cortisol_saliva), mean_mind = mean(mindfulness), sd_mind = sd(mindfulness))
+```
+
+### models
+```{r}
+model1 <- pain ~ age_c + sex
+model2 <-pain ~ age_c + sex + STAI_trait_c  + pain_cat_c + serum_c + saliva_c + mind_c
+model2_a <-pain ~ age_c + sex + STAI_trait_c  + pain_cat_c + serum_c + mind_c
+
+mod_1 <- lm(model1, data = Ass_1)
+mod_2 <- lm(model2, data = Ass_1)
+
+#adjusted models
+reg_mod_1 <- lm(model1, data = Ass_1)
+reg_mod_2 <- lm(model2_a, data = Ass_1)
+
+```
+
+###pre-tests
+
+####Overview
+```{r}
+plot_age <- Ass_1 %>% ggplot() +aes(x = age, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_STAI <- Ass_1 %>% ggplot() +aes(x = STAI_trait, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_pain_cat <- Ass_1 %>% ggplot() +aes(x = pain_cat, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_serum <- Ass_1 %>% ggplot() +aes(x = cortisol_serum, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_saliva <- Ass_1 %>% ggplot() +aes(x = cortisol_saliva, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_cortisol <- Ass_1 %>% ggplot() +aes(x = cortisol_saliva, y = cortisol_serum,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1) # obviously multicolinearity
+grid.arrange(plot_age, plot_STAI, plot_pain_cat, plot_serum, plot_saliva, plot_cortisol, nrow=3)
+```
+####multicollinearity
+```{r}
+mod_2 %>% vif() # bad VIFs for cortisol measurements --> exclusion of cortisol_saliva
+vif(reg_mod_2)
+```
+
+####normality
+```{r}
+reg_mod_2 %>% plot(which=5)
+reg_mod_2 %>% plot(which=4)
+reg_mod_2 %>% plot(which=2)
+res_mod_2 <- enframe(residuals(reg_mod_2))
+res_mod_2 %>% ggplot() +aes(x = value) +geom_histogram()
+describe(residuals(reg_mod_2))
+
+```
+
+####Linearity
+```{r}
+crPlots(reg_mod_2)
+```
+####Homoscedasticity
+```{r}
+reg_mod_2 %>% plot(which=3)
+reg_mod_2 %>% ncvTest() # NCV test
+reg_mod_2 %>% bptest() # Breush-Pagan test
+```
+
+### Hierarchical Regression
+```{r}
+#testing nested models
+anova(reg_mod_1, reg_mod_2)
+#centered values
+tab_model(reg_mod_1, reg_mod_2, show.se = T, show.std = T, show.aic = T, dv.labels = c("model 1", "model 2"),
+          pred.labels = c("(Intercept)", "age", "male", "State Trait Anxiety", "pain catastrophizing", "cortisol","mindfulness"),
+          digits.p = 3, file = "regression_table_centered.doc", show.obs = F)
+
+summary(reg_mod_2) # 0.4936
+summary(reg_mod_1)
+coef_table(reg_mod_2)
+coef_table(reg_mod_1)
+```
+#ASSIGNMENT 2
+##load data
+```{r}
+Ass_2 <- Ass_1
+Ass_2_raw_data <- read.csv("https://tinyurl.com/ha-dataset2")
+Ass_2_new <- Ass_2_raw_data
+
+#centering metric variables
+# metric presictors are centered that it is easier to interpret the intercept and make the models easier to compare
+Ass_2_new$age_c <- scale(Ass_2_new$age, center=T, scale = F)
+Ass_2_new$STAI_trait_c <- scale(Ass_2_new$STAI_trait, center=T, scale = F)
+Ass_2_new$pain_cat_c <- scale(Ass_2_new$pain_cat, center=T, scale = F)
+Ass_2_new$serum_c <- scale(Ass_2_new$cortisol_serum, center=T, scale = F)
+Ass_2_new$saliva_c <- scale(Ass_2_new$cortisol_saliva, center=T, scale = F)
+Ass_2_new$mind_c <- scale(Ass_2_new$mindfulness, center=T, scale = F)
+Ass_2_new$IQ_c <- scale(Ass_2_new$IQ, center=T, scale = F)
+Ass_2_new$weight_c <- scale(Ass_2_new$weight, center=T, scale = F)
+Ass_2_new$income_c <- scale(Ass_2_new$household_income, center=T, scale = F)
+```
+
+##analysis
+### descriptives
+```{r}
+Ass_2 %>% 
+  summarize(number = n(), mean_age = mean(age), sd_age = sd(age), mean_STAI = mean(STAI_trait), sd_STAI = sd(STAI_trait), mean_pain = mean(pain), sd_pain = sd(pain), mean_pain_cat = mean(pain_cat), sd_pain_cat = sd(pain_cat), mean_cor_se = mean(cortisol_serum), sd_cor_se = sd(cortisol_serum), mean_cor_sa = mean(cortisol_saliva), sd_cor_sa = sd(cortisol_saliva), mean_mind = mean(mindfulness), sd_mind = sd(mindfulness), mean_income = mean(household_income),
+            sd_income = sd(household_income), mean_IQ = mean(IQ), sd_IQ = sd(IQ),
+            mean_weight = mean(weight), sd_weight = sd(weight))
+
+# by sex
+Ass_2 %>% 
+  group_by (sex) %>% 
+  summarize(number = n(), mean_age = mean(age), sd_age = sd(age), mean_STAI = mean(STAI_trait), sd_STAI = sd(STAI_trait), mean_pain = mean(pain), sd_pain = sd(pain), mean_pain_cat = mean(pain_cat), sd_pain_cat = sd(pain_cat), mean_cor_se = mean(cortisol_serum), sd_cor_se = sd(cortisol_serum), mean_cor_sa = mean(cortisol_saliva), sd_cor_sa = sd(cortisol_saliva), mean_mind = mean(mindfulness), sd_mind = sd(mindfulness), mean_income = mean(household_income),
+            sd_income = sd(household_income), mean_IQ = mean(IQ), sd_IQ = sd(IQ),
+            mean_weight = mean(weight), sd_weight = sd(weight))
+```
+###models
+```{r}
+#models
+model3 <-pain ~ age_c + sex + STAI_trait_c  + pain_cat_c + serum_c  + mind_c + weight_c + IQ_c + income_c
+model3_back <- pain ~ age_c + sex  + pain_cat_c + serum_c + mind_c + income_c
+
+
+
+#diagnostic models
+mod_3 <- lm(model3, data=Ass_2)
+
+#backward regression
+reg_mod_3 <- mod_3
+reg_mod_3_back <- lm(model3_back, data=Ass_2)
+
+
+#model assignment 1
+theory_based_model <- reg_mod_2
+```
+
+###pre-tests
+####Overview
+```{r}
+plot_IQ <- Ass_2 %>% ggplot() +aes(x = IQ, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_income <- Ass_2 %>% ggplot() +aes(x = household_income, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+plot_weight <- Ass_2 %>% ggplot() +aes(x = weight, y = pain,) +geom_point() +geom_smooth(method = "lm") + stat_cor(p.accuracy = 0.001, r.accuracy = 0.01, method = "pearson", label.x = 1)
+grid.arrange(plot_age, plot_STAI, plot_pain_cat, plot_serum, plot_IQ, plot_weight,  plot_income, nrow=3)
+```
+####multicollinearity
+```{r}
+mod_3 %>% vif() # bad VIFs for cortisol measurements --> exclusion of cortisol_saliva
+```
+
+####normality
+```{r}
+mod_3 %>% plot(which=5)
+mod_3 %>% plot(which=4)
+mod_3 %>% plot(which=2)
+res_mod_3 <- enframe(residuals(mod_3))
+res_mod_3 %>% ggplot() +aes(x = value) +geom_histogram()
+describe(residuals(mod_3))
+
+```
+
+####Linearity
+```{r}
+crPlots(mod_3)
+```
+####Homoscedasticity
+```{r}
+mod_3 %>% plot(which=3)
+mod_3 %>% ncvTest() # NCV test
+mod_3 %>% bptest() # Breush-Pagan test
+```
+### backward regression
+```{r}
+mod_back <- step(reg_mod_3, direction = "backward")
+summary(mod_back)
+AIC(mod_3)
+anova(mod_back, mod_3)
+
+tab_model(mod_back, theory_based_model, show.se = T, show.std = T, show.aic = T, dv.labels = c("backward model", "theory based model"), pred.labels = c("(Intercept)", "age", "sex [male]" ,"pain catastrophizing", "cortisol","mindfulness", "income", "State Trait Anxiety" ),digits.p = 3, file = "backward_regression_centered.doc", show.obs = F)
+
+coef_table(mod_back)
+```
+### prediction
+```{r}
+#RSS differs centred - non centred values by 1
+pre_mod_theory <- predict(reg_mod_2, Ass_2_new)
+pre_mod_result <- predict(mod_back, Ass_2_new)
+
+RSS_theory <- sum((Ass_2_new$pain - pre_mod_theory)^2) 
+RSS_result <- sum((Ass_2_new$pain - pre_mod_result)^2) 
+RSS_theory
+RSS_result
+```
+
+#ASSIGNMENT 3
+## load data
+```{r}
+Ass_3.1_raw_data <- read.csv("https://tinyurl.com/ha-dataset3")
+Ass_3.2_raw_data <- read.csv("https://tinyurl.com/ha-dataset4")
+Ass_3.1 <- Ass_3.1_raw_data
+Ass_3.2 <- Ass_3.2_raw_data
+```
+
+##data cleaning
+```{r}
+Ass_3.1 %>% summary()
+Ass_3.2 %>% summary()
+Ass_3.2$mindfulness[Ass_3.2$mindfulness==6.05]<- NA
+Ass_3.1$sex[Ass_3.1$sex=="femlae"]<- "female"
+Ass_3.1$household_income[Ass_3.1$household_income==-6994]<- 6994 
+Ass_3.1$household_income[Ass_3.1$household_income==-23482]<- 23482
+
+#centering metric variables
+# metric presictors are centered that it is easier to interpret the intercept and make the models easier to compare
+Ass_3.1$age_c <- scale(Ass_3.1$age, center=T, scale = F)
+Ass_3.1$STAI_trait_c <- scale(Ass_3.1$STAI_trait, center=T, scale = F)
+Ass_3.1$pain_cat_c <- scale(Ass_3.1$pain_cat, center=T, scale = F)
+Ass_3.1$serum_c <- scale(Ass_3.1$cortisol_serum, center=T, scale = F)
+Ass_3.1$saliva_c <- scale(Ass_3.1$cortisol_saliva, center=T, scale = F)
+Ass_3.1$mind_c <- scale(Ass_3.1$mindfulness, center=T, scale = F)
+Ass_3.1$IQ_c <- scale(Ass_3.1$IQ, center=T, scale = F)
+Ass_3.1$weight_c <- scale(Ass_3.1$weight, center=T, scale = F)
+Ass_3.1$income_c <- scale(Ass_3.1$household_income, center=T, scale = F)
+
+Ass_3.2$age_c <- scale(Ass_3.2$age, center=T, scale = F)
+Ass_3.2$STAI_trait_c <- scale(Ass_3.2$STAI_trait, center=T, scale = F)
+Ass_3.2$pain_cat_c <- scale(Ass_3.2$pain_cat, center=T, scale = F)
+Ass_3.2$serum_c <- scale(Ass_3.2$cortisol_serum, center=T, scale = F)
+Ass_3.2$saliva_c <- scale(Ass_3.2$cortisol_saliva, center=T, scale = F)
+Ass_3.2$mind_c <- scale(Ass_3.2$mindfulness, center=T, scale = F)
+Ass_3.2$IQ_c <- scale(Ass_3.2$IQ, center=T, scale = F)
+Ass_3.2$weight_c <- scale(Ass_3.2$weight, center=T, scale = F)
+Ass_3.2$income_c <- scale(Ass_3.2$household_income, center=T, scale = F)
+
+Ass_3.1 %>%
+mutate(hospital = factor(hospital))
+Ass_3.2 %>%
+mutate(hospital = factor(hospital))
+```
+
+##analysis
+
+###models
+```{r}
+#dataset 3.1
+mixed <- pain ~ age_c + sex + STAI_trait_c  + pain_cat_c + serum_c + mind_c + (1|hospital)
+mixed_2_sl <- pain ~ serum_c + (serum_c|hospital)
+mixed_2_int <- pain ~ serum_c + (1|hospital)
+
+reg_mixed_3.1 <- lmer(mixed, data = Ass_3.1)
+reg_mixed_3_sl <- lmer(mixed_2_sl, data = Ass_3.1)
+reg_mixed_3_int <- lmer(mixed_2_int, data = Ass_3.1)
+```
+
+###pre-test
+```{r}
+#↨testing nomralitiy of the residuals to test if the sum of squares are influenced by it
+reg_mixed_3.1 %>% plot(which=5)
+reg_mixed_3.1 %>% plot(which=4)
+reg_mixed_3.1 %>% plot(which=2)
+reg_mixed_3.1 <- enframe(residuals(reg_mixed_3.1))
+reg_mixed_3.1 %>% ggplot() +aes(x = value) +geom_histogram()
+reg_mixed_3.1 <- lmer(mixed, data = Ass_3.1)
+res <- residuals(reg_mixed_3.1)
+describe(residuals(reg_mixed_3.1))
+```
+
+### mixed model
+```{r}
+tab_model(reg_mixed_3.1, reg_mod_2, show.se = T, show.std = T, dv.labels = c("mixed", "Ass 1"),pred.labels = c("(Intercept)", "age", "sex [male]" ,"State Trait Anxiety" ,"pain catastrophizing", "cortisol","mindfulness"), digits.p = 4, show.obs = F, file = "mixed_regression_centered.doc") #adjust AIC after running script!
+
+stdCoef.merMod(reg_mixed_3.1)
+summary(reg_mixed_3.1)
+cAIC(reg_mixed_3.1)$caic
+AIC(reg_mod_2)
+
+pre_mod_3.1 <- predict(reg_mixed_3.1, Ass_3.2, allow.new.level=T)
+
+RSS_mod_3.1 <- sum((Ass_3.2$pain - pre_mod_3.1)^2, na.rm = T)
+TSS_mod_3.1 <- sum((Ass_3.2$pain - mean(Ass_3.2$pain))^2, na.rm = T)
+1-(RSS_mod_3.1/TSS_mod_3.1)
+
+pre_mod_old <- predict(reg_mixed_3.1, allow.new.level=T)
+
+RSS_old <- sum((Ass_3.1$pain - pre_mod_old)^2, na.rm = T)
+TSS_old <- sum((Ass_3.1$pain - mean(Ass_3.1$pain))^2, na.rm = T)
+1-(RSS_old/TSS_old)
+
+mean(Ass_3.1$age)
+get_variance(reg_mixed_3.1)
+```
+
+###slope
+```{r}
+Ass_3.1 <- Ass_3.1 %>%
+mutate(pred_int = predict(reg_mixed_3_int))
+
+Ass_3.1 %>%
+ggplot() +
+aes(y = pain, x = cortisol_serum, group = hospital)+
+geom_point(aes(color = hospital), size = 4) +
+geom_line(color='red', aes(y=pred_int, x=cortisol_serum))+
+facet_wrap( ~ hospital, ncol = 2)+
+xlab("cortisol")+
+ggsave("slope_int.jpg")
+
+```
